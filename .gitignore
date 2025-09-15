@@ -1,0 +1,4 @@
+# Ignore raw datasets (do not upload)
+data/raw_data/
+
+
