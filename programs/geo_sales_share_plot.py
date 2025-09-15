@@ -1,109 +1,120 @@
-"""
-Compute domestic vs. foreign sales shares for homebuilding-related codes and plot.
-
-Steps:
-- Load GEOSEG data; restrict to homebuilding SIC/NAICS
-- Deduplicate within (gvkey, datadate, geotp) by latest srcdate
-- Merge fiscal year (fyear) from (gvkey, datadate) map
-- Aggregate sales by fiscal year and geography (2=domestic, 3=foreign)
-- Pivot to wide columns, compute shares, plot, and export CSV
-"""
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
-# Configuration
-MIN_YEAR = 1977
+df = pd.read_csv('data/raw_data/geo_seg.csv')
+# Normalize keys and parse dates
+df['gvkey'] = df['gvkey'].astype(str).str.zfill(6)
+df['datadate'] = pd.to_datetime(df['datadate'])
+df['srcdate'] = pd.to_datetime(df['srcdate'])
 
+# Pull fyear and loc from fyear_map based on (gvkey, datadate)
+fyear_map = pd.read_csv('data/raw_data/fyear_map.csv', usecols=['gvkey', 'datadate', 'fyear', 'loc'])
+fyear_map['gvkey'] = fyear_map['gvkey'].astype(str).str.zfill(6)
+fyear_map['datadate'] = pd.to_datetime(fyear_map['datadate'])
+df = df.merge(fyear_map, on=['gvkey', 'datadate'], how='left')
 
-def load_geo_data() -> pd.DataFrame:
-    """Load geo segment data and parse required dates."""
-    df_local = pd.read_csv('data/raw_data/geo_seg.csv')
-    df_local['datadate'] = pd.to_datetime(df_local['datadate'])
-    df_local['srcdate'] = pd.to_datetime(df_local['srcdate'])
-    return df_local
+# If multiple srcdate report the same (gvkey, datadate, geotp), keep the last (latest srcdate)
+df = (
+    df.sort_values(['gvkey', 'datadate', 'geotp', 'srcdate'])
+      .drop_duplicates(['gvkey', 'datadate', 'geotp'], keep='last')
+)
 
+mask = df['sic'].isin([1311, 1321])
+df = df[mask]
 
-def filter_scope_and_dedupe(df_local: pd.DataFrame) -> pd.DataFrame:
-    """Restrict to relevant SIC/NAICS and keep the latest srcdate per (gvkey, datadate, geotp)."""
-    mask = (df_local['sic'].isin([1311, 1321]))
-    df_local = df_local[mask]
-    df_local = (
-        df_local
-          .sort_values(['gvkey', 'datadate', 'geotp', 'srcdate'])
-          .drop_duplicates(['gvkey', 'datadate', 'geotp'], keep='last')
-    )
-    return df_local
+# Drop srcdate after deduplication
+df = df.drop(columns=['srcdate','stype', 'sid'])
 
+US_LIST = [
+    "United States",
+    "U.S.",
+    "USA",
+    "US",
+    "United States of America",
+    "United states",
+    "United States,Domestic",
+    "United States & Other",
+    "United States,Other Foreign",
+    "United States, Europe, other regions",
+    "USA and Other",
+    "Asia,United States",
+    "Asia,Great Britain,United States",
+    "Africa,Great Britain,United States",
+    "Corporate - United States",
+    "U.S. Gulf of Mexico",
+    "U.S Gulf of Mexico",
+    "North America",
+    "North America,Domestic",
+    "South America,North America,Domestic",
+    "Canada & United States"
+]
 
-def map_to_fiscal_year(df_local: pd.DataFrame) -> pd.DataFrame:
-    """Map datadate into fyear via (gvkey, datadate) lookup, with normalized gvkeys."""
-    fyear_map = pd.read_csv('data/raw_data/fyear_map.csv', usecols=['gvkey', 'datadate', 'fyear'])
-    fyear_map['datadate'] = pd.to_datetime(fyear_map['datadate'])
+# Flag domestic (USA) sales per row based on firm location and geography/segment name
+df['is_domestic_sale'] = np.where(
+    df['loc'] == 'USA',
+    df['geotp'] == 2,
+    df['snms'].isin(US_LIST)
+)
 
-    df_local['gvkey'] = df_local['gvkey'].astype(str).str.zfill(6)
-    fyear_map['gvkey'] = fyear_map['gvkey'].astype(str).str.zfill(6)
+# Compute firm-year total sales and domestic (USA) sales
+firm_year_totals = (
+    df.groupby(['gvkey', 'fyear'])['sales']
+      .sum()
+      .reset_index(name='total_sales')
+)
+firm_year_domestic = (
+    df[df['is_domestic_sale']]
+      .groupby(['gvkey', 'fyear'])['sales']
+      .sum()
+      .reset_index(name='domestic_sales')
+)
 
-    fyear_map = fyear_map.drop_duplicates(subset=['gvkey', 'datadate'])
-    df_local = df_local.merge(fyear_map, on=['gvkey', 'datadate'], how='left')
-    df_local = df_local.dropna(subset=['fyear'])
-    df_local['fyear'] = df_local['fyear'].astype(int)
-    return df_local
+# Merge and compute domestic sales share
+domestic_share_by_firm = firm_year_totals.merge(firm_year_domestic, on=['gvkey', 'fyear'], how='left')
+domestic_share_by_firm['domestic_sales'] = domestic_share_by_firm['domestic_sales'].fillna(0)
+DomShareDenom = domestic_share_by_firm['total_sales']
+domestic_share_by_firm['domestic_sales_share'] = np.where(
+    DomShareDenom > 0,
+    domestic_share_by_firm['domestic_sales'] / DomShareDenom,
+    np.nan
+)
 
+# Export to processed data
+domestic_share_by_firm.to_csv('data/processed_data/domestic_sales_share_by_firm.csv', index=False)
 
-def compute_geo_sales_shares(df_local: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate to fiscal-year domestic/foreign sales and compute shares (trim to MIN_YEAR)."""
-    df_local = df_local[df_local['geotp'].isin([2, 3])]
-    geo_sales_df = (
-        df_local.groupby(['fyear', 'geotp'])['sales']
-          .sum()
-          .unstack('geotp')
-          .reset_index()
-          .rename(columns={2: 'domestic_sales', 3: 'foreign_sales'})
-          .fillna(0)
-    )
-    geo_sales_df['total_sales'] = geo_sales_df['domestic_sales'] + geo_sales_df['foreign_sales']
-    geo_sales_df['domestic_sales_share'] = geo_sales_df['domestic_sales'] / geo_sales_df['total_sales']
-    geo_sales_df['foreign_sales_share'] = geo_sales_df['foreign_sales'] / geo_sales_df['total_sales']
-    geo_sales_df = geo_sales_df[geo_sales_df['fyear'] >= MIN_YEAR]
-    return geo_sales_df
+# Aggregate US (domestic) sales share by fiscal year and plot
+agg_totals = (
+    df.groupby('fyear')['sales']
+      .sum()
+      .reset_index(name='total_sales')
+)
+agg_usa = (
+    df[df['is_domestic_sale']]
+      .groupby('fyear')['sales']
+      .sum()
+      .reset_index(name='usa_sales')
+)
+agg = agg_totals.merge(agg_usa, on='fyear', how='left')
+agg['usa_sales'] = agg['usa_sales'].fillna(0)
+agg['usa_sales_share'] = np.where(
+    agg['total_sales'] > 0,
+    agg['usa_sales'] / agg['total_sales'],
+    np.nan
+)
+agg = agg.sort_values('fyear')
+agg = agg[(agg['fyear'] >= 1984) & (agg['fyear'] <= 2024)]
 
-
-def plot_domestic_share(geo_sales_df: pd.DataFrame) -> None:
-    """Line plot with title and axis labels for domestic sales share over time."""
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        geo_sales_df['fyear'],
-        geo_sales_df['domestic_sales_share'],
-        label='Domestic Sales Share',
-        linewidth=2
-    )
-    plt.title('Domestic Sales Share Over Time')
-    plt.xlabel('Fiscal Year')
-    plt.ylabel('Domestic Sales Share (%)')
-    plt.gca().yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig('output/geo_sales_share_plot.png')
-    plt.show()
-
-
-def save_geo_sales(geo_sales_df: pd.DataFrame) -> None:
-    """Export processed results to CSV."""
-    geo_sales_df.to_csv('output/geo_sales_share_plot.csv', index=False)
-
-def main() -> None:
-    df_local = load_geo_data()
-    df_local = filter_scope_and_dedupe(df_local)
-    df_local = map_to_fiscal_year(df_local)
-    geo_sales_df = compute_geo_sales_shares(df_local)
-    plot_domestic_share(geo_sales_df)
-    save_geo_sales(geo_sales_df)
-
-
-if __name__ == '__main__':
-    main()
-
+plt.figure(figsize=(10, 6))
+plt.plot(agg['fyear'], agg['usa_sales_share'], label='US Sales Share', linewidth=2)
+plt.title('Aggregate US Sales Share Over Time')
+plt.xlabel('Fiscal Year')
+plt.ylabel('US Sales Share (%)')
+plt.gca().yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
+plt.xlim(1984, 2024)
+plt.grid(True, alpha=0.3)
+plt.legend()
+plt.tight_layout()
+plt.savefig('output/geo_sales_share_plot.png')
+plt.show()

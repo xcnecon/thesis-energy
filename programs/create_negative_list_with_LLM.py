@@ -226,8 +226,8 @@ def classify_batch(client: OpenAI, model: str, segments: List[str]) -> List[Dict
 
 def main():
     ap = argparse.ArgumentParser(description="Conservatively flag clearly non-E&P segments via OpenAI.")
-    ap.add_argument("-i", "--input_path", default="output/segment_names.txt", help="Path to segment_names.txt or CSV with column 'segment_name'.")
-    ap.add_argument("-o", "--output_csv", default="output/segment_flags.csv", help="Output CSV path.")
+    ap.add_argument("-i", "--input_path", default="data/processed_data/segment_names.txt", help="Path to segment_names.txt or CSV with column 'segment_name'.")
+    ap.add_argument("-o", "--output_csv", default="data/processed_data/segment_flags.csv", help="Output CSV path.")
     ap.add_argument("-m", "--model", default=DEFAULT_MODEL, help="OpenAI model (default: %(default)s).")
     ap.add_argument("-b", "--batch_size", type=int, default=BATCH_SIZE, help="Segments per API call.")
     ap.add_argument("-w", "--max_workers", type=int, default=MAX_WORKERS_DEFAULT, help="Number of concurrent API calls (default: %(default)s).")
