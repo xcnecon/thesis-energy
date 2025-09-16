@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Load quarterly fundamentals
-fund = pd.read_csv('data/raw_data/quarterly_fundamentals.csv')
+fund = pd.read_csv('data/raw_data/compustat/quarterly_fundamentals.csv')
 
 # Normalize join keys
 fund['gvkey'] = fund['gvkey'].astype(str).str.zfill(6)

@@ -46,7 +46,7 @@ def save_outputs(hhi_by_fyear: pd.DataFrame, df_new: pd.DataFrame, num_gvkeys_by
 
 def load_segment_data() -> pd.DataFrame:
     """Load and prepare segment-level data with fiscal years and essential columns."""
-    df = pd.read_csv('data/raw_data/buz_seg.csv')
+    df = pd.read_csv('data/raw_data/compustat/buz_seg.csv')
     df['datadate'] = pd.to_datetime(df['datadate'])
     df['srcdate'] = pd.to_datetime(df['srcdate'])
 
@@ -58,7 +58,7 @@ def load_segment_data() -> pd.DataFrame:
           .drop(columns=['_prio'])
     )
 
-    fyear_map = pd.read_csv('data/raw_data/fyear_map.csv', usecols=['gvkey', 'datadate', 'fyear'])
+    fyear_map = pd.read_csv('data/raw_data/compustat/fyear_map.csv', usecols=['gvkey', 'datadate', 'fyear'])
     fyear_map['datadate'] = pd.to_datetime(fyear_map['datadate'])
     df['gvkey'] = df['gvkey'].astype(str).str.zfill(6)
     fyear_map['gvkey'] = fyear_map['gvkey'].astype(str).str.zfill(6)
@@ -71,7 +71,7 @@ def load_segment_data() -> pd.DataFrame:
     return df
 
 def load_negative_list() -> list:
-    neg = pd.read_csv('output/segment_flags.csv')
+    neg = pd.read_csv('data/processed_data/segment_flags.csv')
     neg = neg[neg['is_non_e_and_p'] == True]
     return neg['segment'].unique().tolist()
 
@@ -143,7 +143,7 @@ def plot_aggregate_enp_share_both(combined_plot: pd.DataFrame) -> None:
 
 def save_filtered_firms(df_filtered: pd.DataFrame) -> None:
     df_final = df_filtered[['gvkey', 'fyear', 'enp_share']]
-    df_final.to_csv('output/firms_with_enp_share_gt_0.8.csv', index=False)
+    df_final.to_csv('data/processed_data/firms_with_enp_share_gt_0.8.csv', index=False)
 
 def main() -> None:
     df = load_segment_data()

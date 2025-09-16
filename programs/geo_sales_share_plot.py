@@ -3,14 +3,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
-df = pd.read_csv('data/raw_data/geo_seg.csv')
+df = pd.read_csv('data/raw_data/compustat/geo_seg.csv')
 # Normalize keys and parse dates
 df['gvkey'] = df['gvkey'].astype(str).str.zfill(6)
 df['datadate'] = pd.to_datetime(df['datadate'])
 df['srcdate'] = pd.to_datetime(df['srcdate'])
 
 # Pull fyear and loc from fyear_map based on (gvkey, datadate)
-fyear_map = pd.read_csv('data/raw_data/fyear_map.csv', usecols=['gvkey', 'datadate', 'fyear', 'loc'])
+fyear_map = pd.read_csv('data/raw_data/compustat/fyear_map.csv', usecols=['gvkey', 'datadate', 'fyear', 'loc'])
 fyear_map['gvkey'] = fyear_map['gvkey'].astype(str).str.zfill(6)
 fyear_map['datadate'] = pd.to_datetime(fyear_map['datadate'])
 df = df.merge(fyear_map, on=['gvkey', 'datadate'], how='left')
